@@ -1,0 +1,172 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d101a"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Success Studio</title>
+<style>
+:root{--bg:#0d101a;--c:#1c2030;--h:#242848;--m:#9aa0b8;--a:#5578ff;--g:#34c38f;--r:#f1556c;--y:#f7b84b}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:#fff;font:16px system-ui,sans-serif;padding:calc(env(safe-area-inset-top,0px) + 14px) 14px 110px}
+.card{background:var(--c);border-radius:20px;padding:16px;margin-bottom:12px;display:block}
+.hero{background:var(--h);border-radius:28px;padding:22px}
+.m{color:var(--m);font-size:14px}.big{font-size:28px;font-weight:800;margin-top:6px}
+.g{color:var(--g)}.r{color:var(--r)}.y{color:var(--y)}.a{color:var(--a)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tile{background:var(--c);color:#fff;border:0;border-radius:24px;min-height:120px;font:700 17px system-ui;padding:12px}
+.tile i{display:block;font-style:normal;font-size:30px;margin-bottom:6px}
+label{display:block;color:var(--m);font-size:13px;margin-bottom:10px}
+input,select{width:100%;margin-top:4px;padding:12px;border-radius:12px;border:1px solid #2f3550;background:#0d101a;color:#fff;font:16px system-ui}
+input[type=checkbox]{width:auto;margin-right:8px}
+.btn{width:100%;padding:14px;border:0;border-radius:14px;background:var(--a);color:#fff;font:700 16px system-ui}
+.sm{padding:6px 12px;border:0;border-radius:10px;background:#2f3550;color:#fff;font:14px system-ui}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.b{font-size:12px;font-weight:700}
+.back{background:none;border:0;color:var(--a);font:600 16px system-ui;margin-bottom:10px}
+.tabs{display:flex;gap:6px;margin:12px 0}.tabs button{flex:1;padding:10px;border:0;border-radius:12px;background:#2f3550;color:#fff;font:600 14px system-ui}.tabs .on{background:var(--a)}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;padding:10px 14px calc(env(safe-area-inset-bottom,0px) + 10px);background:var(--c)}
+nav button{flex:1;padding:14px;border:0;border-radius:16px;background:none;color:var(--m);font:700 16px system-ui}nav .on{background:var(--a);color:#fff}
+#t{position:fixed;left:14px;right:14px;bottom:90px;background:#fff;color:#000;padding:12px;border-radius:12px;display:none;z-index:9}
+#m{position:fixed;inset:0;background:#000c;display:flex;overflow:auto;padding:14px;z-index:8}#m .card{width:100%;margin:auto}
+@media print{body>*:not(#m){display:none!important}#m{position:static;background:#fff}#m .card{background:#fff;color:#000}#m button{display:none}}
+</style></head><body>
+<div id="app"></div>
+<nav id="nav"><button data-a="go" data-v="dash">🏠 Dashboard</button><button data-a="go" data-v="act">⚡ Quick Actions</button></nav>
+<div id="t"></div>
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,setPersistence,browserLocalPersistence,browserSessionPersistence,sendPasswordResetEmail}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,setDoc,getDoc,onSnapshot,deleteDoc,updateDoc,writeBatch}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// PASTE YOUR FIREBASE WEB CONFIG HERE
+const cfg={apiKey:"AIzaSyBRYEnYvKKHFfUj-xBTtj9B6TSYQo8zlNY",authDomain:"business-manager-studio.firebaseapp.com",projectId:"business-manager-studio",storageBucket:"business-manager-studio.firebasestorage.app",messagingSenderId:"877761301121",appId:"1:877761301121:web:9d4d4f73e36a5ad26a1b80"};
+
+const ok=!cfg.apiKey.startsWith("PASTE");let auth,db;
+if(ok){const app=initializeApp(cfg);auth=getAuth(app);db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})})}
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const N=n=>'₦'+Math.round(n||0).toLocaleString();
+const ld=(o=0)=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4-o*864e5).toISOString().slice(0,10);
+const S={u:null,shop:'',role:'',name:'',d:{customers:[],sessions:[],payments:[],expenses:[],staff:[],members:[],blocked:[],packages:[]},pend:{},v:'dash',mode:'in',per:'day',q:'',owe:false,busy:false,unsub:[]};
+const adm=()=>S.role==='admin';
+const msg=e=>({'auth/invalid-credential':'Wrong email or password','auth/email-already-in-use':'Email already used','auth/weak-password':'Password needs 6+ characters','permission-denied':'Not allowed. Check your shop code or role.','auth/network-request-failed':'No internet connection'}[e.code])||e.message;
+const toast=m=>{const t=$('t');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',9000)};
+const rev=a=>[...a].sort((x,y)=>y.createdAt-x.createdAt);
+const sess=id=>S.d.sessions.find(x=>x.id==id);
+const sum=(a,k)=>a.reduce((n,x)=>n+x[k],0);
+const paid=id=>sum(S.d.payments.filter(x=>x.sessionId==id),'amount');
+const bal=s=>s.total-paid(s.id);
+const after=p=>{const s=sess(p.sessionId);return s?s.total-sum(S.d.payments.filter(x=>x.sessionId==p.sessionId&&x.createdAt<=p.createdAt),'amount'):0};
+const st=(i,l,v)=>`<div class=card><div class=m>${i} ${l}</div><div class=big>${v}</div></div>`;
+const inp=(n,l,t='text',x='')=>`<label>${l}<input name=${n} type=${t} ${x}></label>`;
+const sel=(n,l,o)=>`<label>${l}<select name=${n}>${o}</select></label>`;
+const opt=(v,t)=>`<option value="${esc(v)}">${esc(t)}</option>`;
+const empty=t=>`<p class=m>${t}</p>`;
+const deny='<div class=card>Admins only.</div>';
+const delb=(c,id)=>adm()?` <button class=sm data-a=del data-c=${c} data-id=${id}>Delete</button>`:'';
+const TEL='09020680526 / 09030340253';const LOGO='data:image/png;base64,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';
+const ADM=['staff','rep','pk','bk','exp'];
+const T=[["newS","➕","New Session"],["pay","💳","Record Payment"],["newE","💸","New Expense"],["cust","👥","Customers"],["sess","📸","Photography Sessions"],["staff","👨‍💼","Staff Management"],["rep","📊","Business Reports"],["rec","🧾","Receipt History"],["exp","📋","View Expenses"],["pk","🏷️","Packages"],["bk","💾","Backup & Export"],["dash","🏠","Dashboard"]];
+
+const add=(c,o)=>{const r=doc(collection(db,'shops',S.shop,c));setDoc(r,{...o,id:r.id,createdAt:Date.now(),createdBy:S.u.uid,createdByName:S.name}).catch(e=>toast('Save failed ('+c+'): '+e.code));return r.id};
+
+const sb=ph=>`<input id=q placeholder="${ph}" value="${esc(S.q)}" autocomplete=off style="margin:0 0 12px">`;
+const owed=()=>S.d.sessions.reduce((a,s)=>a+Math.max(bal(s),0),0);
+const STS=['Booked','Shot','Editing','Delivered'];
+const stat=s=>s.status||((s.date||'')>ld()?'Booked':'Shot');
+const scol=x=>({Booked:'a',Shot:'y',Editing:'y',Delivered:'g'}[x]);
+const wa=s=>{const n=(s.phone||'').replace(/\D/g,'').replace(/^0/,'234');return 'https://wa.me/'+n+'?text='+encodeURIComponent('Hello '+(s.customerName||'')+', this is a friendly reminder from Success Studios. Your outstanding balance for the session on '+s.date+' is '+N(bal(s))+'. Kindly make payment when you can. For questions call '+TEL+'. Thank you!')};
+const sc=s=>{const b=bal(s),x=stat(s);return `<div class=card><b>${esc(s.customerName)}</b> <span class=m>${s.date}</span>${s.pkg?`<br><span class=m>📦 ${esc(s.pkg)}</span>`:''}<br>Total ${N(s.total)} · Paid ${N(paid(s.id))}<br><b class=${b>0?'r':'g'}>Balance ${N(b)}</b><br><span class=m>${esc(s.staffName||'')} · ${s.photos||0} photos</span><br><button class=sm data-a=nx data-id=${s.id}>🚚 <span class=${scol(x)}>${x}</span> ›</button>${b>0&&s.phone?` <a class=sm href="${wa(s)}" target=_blank rel=noopener style="text-decoration:none;display:inline-block">💬 Remind</a>`:''}${eb('sessions',s.id)}${delb('sessions',s.id)}</div>`};
+const upc=()=>{const t=ld(),u=S.d.sessions.filter(s=>stat(s)=='Booked'&&(s.date||'')>=t).sort((a,b)=>(a.date||'').localeCompare(b.date||'')).slice(0,5),p=S.d.sessions.filter(s=>['Shot','Editing'].includes(stat(s))).length;return st('🚚','PENDING DELIVERY',p)+`<div class=card><div class=m>📅 UPCOMING SHOOTS</div>${u.map(s=>`<div style="padding:8px 0;border-bottom:1px solid #2f3550"><b>${esc(s.customerName)}</b><br><span class=m>${s.date}${s.pkg?' · '+esc(s.pkg):''}</span></div>`).join('')||'<p class=m style="margin-top:6px">None booked.</p>'}</div>`};
+const team=()=>'<h3 style="margin:18px 0 10px">TEAM LOGINS</h3>'+(S.d.members.map(m=>`<div class=card><b>${esc(m.name)}</b> <span class=m>${m.role=='admin'?'Owner':'Staff'}</span><br><span class=m>${esc(m.email||'')}</span>${m.role!='admin'?` <button class=sm data-a=blk data-id=${m.id}>Block</button>`:''}</div>`).join('')||empty('Staff appear here after they next log in.'))+(S.d.blocked.length?'<h3 style="margin:18px 0 10px">BLOCKED</h3>'+S.d.blocked.map(b=>`<div class=card><b>${esc(b.name)}</b><br><span class=m>${esc(b.email||'')}</span> <button class=sm data-a=unb data-id=${b.id}>Unblock</button></div>`).join(''):'');
+const perf=f=>{const m={},g=n=>{n=n||'Unknown';return m[n]=m[n]||{n,s:0,v:0,p:0}};S.d.sessions.filter(s=>f(s.date)).forEach(s=>{const o=g(s.staffName);o.s++;o.v+=s.total});S.d.payments.filter(p=>f(p.date)).forEach(p=>{g(p.createdByName).p+=p.amount});const a=Object.values(m).sort((x,y)=>y.p-x.p);return '<h3 style="margin:16px 0 10px">STAFF PERFORMANCE</h3>'+(a.map(o=>`<div class=card><b>${esc(o.n)}</b><br><span class=m>${o.s} sessions · ${N(o.v)} value</span><br><span class=g>${N(o.p)}</span> <span class=m>collected</span></div>`).join('')||empty('No activity in this period.'))};
+const lc=()=>{const q=S.q.toLowerCase();return rev(S.d.customers).filter(c=>((c.name||'')+' '+(c.phone||'')).toLowerCase().includes(q)).map(c=>{const ss=S.d.sessions.filter(s=>s.customerId==c.id);return `<div class=card data-a=pc data-id=${c.id}><b>${esc(c.name)}</b><br>${esc(c.phone)}<br><span class=m>${ss.length} sessions · owes ${N(ss.reduce((a,s)=>a+bal(s),0))} · added ${new Date(c.createdAt).toLocaleDateString('en-GB')}</span>${eb('customers',c.id)}${adm()?` <button class=sm data-a=delC data-id=${c.id}>Delete</button>`:''}</div>`}).join('')||empty('No customers found.')};
+const ls=()=>{const q=S.q.toLowerCase();let a=S.d.sessions.filter(s=>((s.customerName||'')+' '+(s.phone||'')+' '+(s.date||'')+' '+(s.pkg||'')).toLowerCase().includes(q));a=S.owe=='1'?a.filter(s=>bal(s)>0).sort((x,y)=>bal(y)-bal(x)):S.owe=='2'?a.filter(s=>stat(s)!='Delivered').sort((x,y)=>(x.date||'').localeCompare(y.date||'')):rev(a);return a.map(sc).join('')||empty('No sessions found.')};
+const eb=(c,id)=>adm()?` <button class=sm data-a=ed data-c=${c} data-id=${id}>Edit</button>`:'';
+const EF={customers:[['name','Full name','text','required'],['phone','Phone','tel','required']],sessions:[['date','Session date','date','required'],['photos','Photographs taken','number','min=0'],['total','Total amount (₦)','number','min=1 required']],expenses:[['description','Description','text','required'],['category','Category','text',''],['amount','Amount (₦)','number','min=1 required'],['date','Date','date','required'],['method','Payment method','text',''],['notes','Notes','text','']],payments:[['amount','Amount (₦)','number','min=1 required'],['date','Date','date','required'],['note','Note','text','']],packages:[['name','Package name','text','required'],['price','Price (₦)','number','min=1 required']]};
+const views={
+dash:()=>`<div class=hero><h1>📸 SUCCESS STUDIO</h1><p class=m>Photography Business Manager</p><h2 style="margin-top:14px">Welcome back, ${esc(S.name)}!</h2><p class=m>${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</p></div><h3 style="margin:18px 0 10px">BUSINESS OVERVIEW</h3>`+st('💰','PAYMENTS RECEIVED',N(sum(S.d.payments,'amount')))+st('📸','PHOTOGRAPHY SESSIONS',S.d.sessions.length)+st('👥','CUSTOMERS',S.d.customers.length)+st('⚠️','OUTSTANDING BALANCE',N(S.d.sessions.reduce((a,s)=>a+bal(s),0)))+(adm()?st('💸','TOTAL EXPENSES',N(sum(S.d.expenses,'amount'))):'')+st('👨‍💼','ACTIVE STAFF',S.d.staff.filter(x=>x.status=='active').length)+upc(),
+act:()=>`<h2 style="margin:6px 0 12px">⚡ QUICK ACTIONS</h2><div class=grid>`+T.filter(t=>adm()||!ADM.includes(t[0])).map(t=>`<button class=tile data-a=go data-v=${t[0]}><i>${t[1]}</i>${t[2]}</button>`).join('')+'</div>',
+newS:()=>`<form class=card data-f=newS><h3>➕ New Session</h3><br>${inp('name','Customer full name','text','required')}${inp('phone','Phone number','tel','required')}${inp('date','Session date','date',`value=${ld()} required`)}${inp('photos','Photographs taken','number','min=0')}${sel('pkg','Package',opt('','Custom price')+S.d.packages.map(p=>opt(p.id,p.name+' - '+N(p.price))).join(''))}${inp('total','Total amount (₦)','number','min=1 required')}${inp('deposit','Initial deposit (₦)','number','min=0')}${sel('status','Status',STS.map(x=>`<option${x=='Shot'?' selected':''}>${x}</option>`).join(''))}${sel('staff','Staff responsible',opt('','Me ('+S.name+')')+S.d.staff.filter(x=>x.status=='active').map(x=>opt(x.id,x.name)).join(''))}<button class=btn>Save session</button></form>`,
+pay:()=>{const o=S.d.sessions.filter(s=>bal(s)>0);return o.length?`<form class=card data-f=pay><h3>💳 Record Payment</h3><br>${sel('sid','Session',o.map(s=>opt(s.id,`${s.customerName} · ${s.date} · owes ${N(bal(s))}`)).join(''))}${inp('amount','Amount (₦)','number','min=1 required')}${inp('date','Payment date','date',`value=${ld()} required`)}${inp('note','Note')}<button class=btn>Save payment</button></form>`:'<div class=card>No sessions with an outstanding balance.</div>'},
+newE:()=>`<form class=card data-f=newE><h3>💸 New Expense</h3><br>${inp('description','Description','text','required')}${sel('category','Category',['Equipment','Printing','Rent','Electricity','Transport','Repairs','Staff payment','Internet','Other'].map(c=>opt(c,c)).join(''))}${inp('amount','Amount (₦)','number','min=1 required')}${inp('date','Expense date','date',`value=${ld()} required`)}${sel('method','Payment method',['Cash','Transfer','POS'].map(c=>opt(c,c)).join(''))}${inp('notes','Notes')}<button class=btn>Save expense</button></form>`,
+cust:()=>sb('Search name or phone')+`<div id=lst>${lc()}</div>`,
+sess:()=>`<div class=tabs>${[['0','All'],['1','Owing'],['2','Pending']].map(p=>`<button class="${(S.owe||'0')==p[0]?'on':''}" data-a=owe data-o=${p[0]}>${p[1]}</button>`).join('')}</div>`+(S.owe=='1'?st('⚠️','TOTAL OWED',N(owed())):'')+sb('Search name, phone, date or package')+`<div id=lst>${ls()}</div>`,
+prof:()=>{const c=S.d.customers.find(x=>x.id==S.cid);if(!c)return empty('Customer not found.');const ss=rev(S.d.sessions.filter(s=>s.customerId==c.id)),pd=ss.reduce((a,s)=>a+paid(s.id),0),tot=sum(ss,'total'),n=(c.phone||'').replace(/\D/g,'').replace(/^0/,'234');
+return `<div class=hero><h2>${esc(c.name)}</h2><p class=m>${esc(c.phone)}</p><div style="margin-top:12px"><a class=sm href="tel:${esc(c.phone)}" style="text-decoration:none;display:inline-block">📞 Call</a> <a class=sm href="https://wa.me/${n}" target=_blank rel=noopener style="text-decoration:none;display:inline-block">💬 WhatsApp</a>${eb('customers',c.id)}</div></div><div style="height:12px"></div>`+st('📸','SESSIONS',ss.length)+st('💰','TOTAL PAID',N(pd))+st('⚠️','OWES',N(tot-pd))+'<h3 style="margin:16px 0 10px">SESSIONS</h3>'+(ss.map(s=>sc(s)+`<div class=m style="margin:-4px 0 12px 8px">${rev(S.d.payments.filter(p=>p.sessionId==s.id)).map(p=>`${p.date} · ${N(p.amount)}${p.note?' · '+esc(p.note):''}`).join('<br>')||'No payments yet'}</div>`).join('')||empty('No sessions.'))},
+pk:()=>!adm()?deny:`<form class=card data-f=pk><h3>🏷️ Add package</h3><br>${inp('name','Package name (e.g. Wedding)','text','required')}${inp('price','Price (₦)','number','min=1 required')}<button class=btn>Add package</button></form>`+(S.d.packages.map(p=>`<div class=card><b>${esc(p.name)}</b> · ${N(p.price)}${eb('packages',p.id)}${delb('packages',p.id)}</div>`).join('')||empty('No packages yet.')),
+bk:()=>!adm()?deny:`<div class=card><h3>💾 Backup & Export</h3><p class=m style="margin:8px 0 12px">Download your records. CSV files open in Excel or Google Sheets.</p>${[['customers','Customers'],['sessions','Sessions'],['payments','Payments'],['expenses','Expenses']].map(x=>`<button class=btn style="margin-bottom:10px" data-a=dl data-k=${x[0]}>⬇️ ${x[1]} (CSV)</button>`).join('')}<button class=btn style="background:#2f3550" data-a=dl data-k=all>⬇️ Full backup (JSON)</button></div>`,
+staff:()=>!adm()?deny:`<div class=card><div class=m>Shop code (give this to staff so they can join)</div><b style="word-break:break-all">${S.shop}</b></div><form class=card data-f=staff><h3>Register staff</h3><br>${inp('name','Full name','text','required')}${inp('phone','Phone','tel')}${inp('title','Job title')}${inp('date','Employment date','date',`value=${ld()}`)}<button class=btn>Add staff</button></form>`+S.d.staff.map(x=>`<div class=card><b>${esc(x.name)}</b> <span class=m>${x.code||''}</span><br>${esc(x.phone||'')} · ${esc(x.title||'')}<br><span class=m>Employed ${x.dateEmployed||''}</span> · <b class=${x.status=='active'?'g':'r'}>${x.status}</b> <button class=sm data-a=tog data-id=${x.id} data-s=${x.status}>${x.status=='active'?'Deactivate':'Reactivate'}</button></div>`).join('')+team(),
+rep:()=>{if(!adm())return deny;const t=ld(),w=ld(6),inP=d=>S.per=='day'?d==t:S.per=='week'?d>=w&&d<=t:d.slice(0,7)==t.slice(0,7);const pr=sum(S.d.payments.filter(x=>inP(x.date)),'amount'),ex=sum(S.d.expenses.filter(x=>inP(x.date)),'amount');
+return `<div class=tabs>${[['day','Daily'],['week','Weekly'],['month','Monthly']].map(p=>`<button class="${S.per==p[0]?'on':''}" data-a=per data-p=${p[0]}>${p[1]}</button>`).join('')}</div>`+st('💰','PAYMENTS RECEIVED',N(pr))+st('💸','EXPENSES',N(ex))+st('📈','CASH SURPLUS',`<span class=${pr-ex>=0?'g':'r'}>${N(pr-ex)}</span>`)+st('⚠️','OUTSTANDING BALANCES',N(S.d.sessions.reduce((a,s)=>a+bal(s),0)))+perf(inP)+'<p class=m>Weekly = last 7 days. Cash surplus is payments minus expenses, not accounting profit.</p>'},
+rec:()=>rev(S.d.payments).map(p=>{const s=sess(p.sessionId)||{};return `<button class=card style="width:100%;text-align:left;border:0;color:#fff;font:16px system-ui" data-a=rc data-id=${p.id}><b>${esc(s.customerName||'Unknown')}</b> <span class=m>${p.date}</span><br><span class=g>${N(p.amount)}</span> · Balance after ${N(after(p))}</button>`}).join('')||empty('No receipts yet.'),
+exp:()=>!adm()?deny:rev(S.d.expenses).map(x=>`<div class=card><b>${esc(x.description)}</b> <span class=m>${x.date}</span><br><span class=r>${N(x.amount)}</span> · ${esc(x.category)} · ${esc(x.method)}<br><span class=m>${esc(x.notes||'')} ${esc(x.createdByName||'')}</span>${eb('expenses',x.id)}${delb('expenses',x.id)}</div>`).join('')||empty('No expenses yet.')
+};
+const loginView=()=>`<div class=hero style="margin-top:6vh"><h1>📸 SUCCESS STUDIO</h1><p class=m>Photography Business Manager</p><div class=tabs>${[['in','Login'],...(location.hash=='#owner'?[['new','Create shop']]:[]),['join','Join shop']].map(p=>`<button class="${S.mode==p[0]?'on':''}" data-a=mode data-m=${p[0]}>${p[1]}</button>`).join('')}</div><form data-f=auth>${S.mode!='in'?inp('name','Your name','text','required'):''}${inp('email','Email','email','required')}${inp('password','Password','password','required minlength=6')}${S.mode=='join'?inp('code','Shop code (ask the owner)','text','required'):''}<label><input type=checkbox name=stay checked>Stay logged in</label><button class=btn>${{in:'Login',new:'Create shop account',join:'Join shop'}[S.mode]}</button></form>${S.mode=='in'?`<button type=button class=back style="width:100%;margin:14px 0 0" data-a=reset>Forgot password?</button>`:''}</div>`;
+
+function setBadge(){const b=$('bd');if(!b)return;const off=!navigator.onLine,syn=Object.values(S.pend).some(Boolean);b.textContent=off?'● OFFLINE':syn?'● SYNCING':'● ONLINE';b.className='b '+(off?'r':syn?'y':'g')}
+function render(){const A=$('app'),nav=$('nav');
+if(!ok){nav.style.display='none';A.innerHTML='<div class=card><h2>Setup needed</h2><p class=m>Paste your Firebase config into the cfg block in this file.</p></div>';return}
+if(!S.u){nav.style.display='none';A.innerHTML=loginView();return}
+nav.style.display='flex';
+A.innerHTML=`<div class=top><span id=bd class=b></span><button class=sm data-a=out>Logout</button></div>`+(S.v=='dash'||S.v=='act'?'':`<button class=back data-a=go data-v=${S.v=='prof'?'cust':'act'}>← ${S.v=='prof'?'Customers':'Quick Actions'}</button>`)+(views[S.v]||views.dash)();
+[...nav.children].forEach((b,i)=>b.className=(i==0)==(S.v=='dash')?'on':'');setBadge()}
+function refresh(){setBadge();if(S.u&&document.activeElement&&document.activeElement.id=='q'){const f={cust:lc,sess:ls}[S.v];if(f)$('lst').innerHTML=f();return}if(!S.u||$('m')||['newS','pay','newE'].includes(S.v))return;if((S.v=='staff'||S.v=='pk')&&[...$('app').querySelectorAll('form input')].some(i=>i.value&&i.type!='date'))return;render()}
+
+async function start(u){const p=await getDoc(doc(db,'users',u.uid));
+if(!p.exists()){toast('No shop linked. Use Create shop or Join shop.');await signOut(auth);return}
+Object.assign(S,{u,shop:p.data().shopId,role:p.data().role,name:p.data().name,v:'dash'});
+const mr=doc(db,'shops',S.shop,'members',u.uid);getDoc(mr).then(x=>{if(!x.exists())setDoc(mr,{id:u.uid,name:S.name,email:p.data().email||u.email||'',role:S.role,createdAt:Date.now()})}).catch(()=>{});
+S.unsub.forEach(f=>f());
+S.unsub=Object.keys(S.d).filter(c=>c!='expenses'||adm()).map(c=>onSnapshot(collection(db,'shops',S.shop,c),s=>{S.d[c]=s.docs.map(d=>d.data());S.pend[c]=s.metadata.hasPendingWrites;refresh()},e=>toast('Read failed ('+c+'): '+e.code)));
+render()}
+
+const act={
+go:d=>{S.v=d.v;S.q='';S.owe=false;render();scrollTo(0,0)},mode:d=>{S.mode=d.m;render()},owe:d=>{S.owe=d.o;render()},reset:()=>{const e=document.querySelector('input[name=email]').value.trim();if(!e)return toast('Type your email above first');sendPasswordResetEmail(auth,e).then(()=>toast('If that email has an account, a reset link was sent. Check spam too.')).catch(x=>toast(msg(x)))},per:d=>{S.per=d.p;render()},
+out:()=>{S.unsub.forEach(f=>f());S.u=null;signOut(auth);render()},
+auth:async f=>{try{S.busy=true;await setPersistence(auth,f.stay?browserLocalPersistence:browserSessionPersistence);let cr;
+if(S.mode=='in')cr=await signInWithEmailAndPassword(auth,f.email,f.password);
+else{try{cr=await createUserWithEmailAndPassword(auth,f.email,f.password)}catch(e){if(e.code=='auth/email-already-in-use')cr=await signInWithEmailAndPassword(auth,f.email,f.password);else throw e}
+const uid=cr.user.uid;
+if(S.mode=='new'){const r=doc(collection(db,'shops'));await setDoc(r,{ownerId:uid,createdAt:Date.now()});await setDoc(doc(db,'users',uid),{shopId:r.id,role:'admin',name:f.name,email:f.email})}
+else await setDoc(doc(db,'users',uid),{shopId:f.code.trim(),role:'staff',name:f.name,email:f.email})}
+S.busy=false;await start(cr.user)}catch(e){S.busy=false;toast(msg(e))}},
+newS:f=>{const total=+f.total,dep=+f.deposit||0;if(!(total>0)||dep<0||dep>total)return toast('Deposit cannot be more than the total');
+const ph=f.phone.trim(),c=S.d.customers.find(x=>x.phone==ph),nm=f.name.trim(),cid=c?c.id:add('customers',{name:nm,phone:ph}),sf=S.d.staff.find(x=>x.id==f.staff);
+const sid=add('sessions',{customerId:cid,customerName:c?c.name:nm,phone:ph,date:f.date,photos:+f.photos||0,total,staffId:f.staff||'',staffName:sf?sf.name:S.name,status:f.status||'Shot',pkg:(S.d.packages.find(p=>p.id==f.pkg)||{}).name||''});
+if(dep>0)add('payments',{sessionId:sid,amount:dep,date:f.date,note:'Initial deposit'});
+toast('Session saved');act.go({v:'act'})},
+pay:f=>{const s=sess(f.sid),a=+f.amount;if(!s)return;const b=bal(s);if(!(a>0)||a>b)return toast('Amount must be between 1 and '+N(b));
+add('payments',{sessionId:s.id,amount:a,date:f.date,note:f.note||''});toast('Payment saved');act.go({v:'rec'})},
+newE:f=>{add('expenses',{description:f.description.trim(),category:f.category,amount:+f.amount,date:f.date,method:f.method,notes:f.notes||''});toast('Expense saved');act.go({v:adm()?'exp':'act'})},
+staff:(f,fm)=>{add('staff',{name:f.name.trim(),phone:f.phone,title:f.title,dateEmployed:f.date,status:'active',code:'ST'+String(S.d.staff.length+1).padStart(3,'0')});fm.reset();toast('Staff added')},
+tog:d=>updateDoc(doc(db,'shops',S.shop,'staff',d.id),{status:d.s=='active'?'inactive':'active'}).catch(e=>toast(msg(e))),
+del:d=>{if(!adm()||!confirm('Delete this record?'))return;const r=(c,id)=>deleteDoc(doc(db,'shops',S.shop,c,id)).catch(e=>toast(msg(e)));r(d.c,d.id);if(d.c=='sessions')S.d.payments.filter(p=>p.sessionId==d.id).forEach(p=>r('payments',p.id))},
+delC:d=>{const c=S.d.customers.find(x=>x.id==d.id);if(!adm()||!c)return;const ss=S.d.sessions.filter(s=>s.customerId==c.id),ps=S.d.payments.filter(p=>ss.some(s=>s.id==p.sessionId));if(!confirm('Delete '+c.name+', '+ss.length+' session(s) and '+ps.length+' payment(s)? This cannot be undone.'))return;const b=writeBatch(db),r=(k,id)=>b.delete(doc(db,'shops',S.shop,k,id));r('customers',c.id);ss.forEach(s=>r('sessions',s.id));ps.forEach(p=>r('payments',p.id));b.commit().then(()=>toast('Customer deleted')).catch(e=>toast('Delete failed: '+e.code))},
+pc:d=>{S.cid=d.id;S.v='prof';S.q='';render();scrollTo(0,0)},
+nx:d=>{const s=sess(d.id);if(!s)return;updateDoc(doc(db,'shops',S.shop,'sessions',s.id),{status:STS[(STS.indexOf(stat(s))+1)%4],updatedAt:Date.now(),updatedBy:S.u.uid}).catch(e=>toast('Failed: '+e.code))},
+pk:(f,fm)=>{add('packages',{name:f.name.trim(),price:+f.price});fm.reset();toast('Package added')},
+dl:d=>{const dt=ld(),save=(n,t,m)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:m}));a.download=n;document.body.append(a);a.click();a.remove()};
+if(d.k=='all')return save('success-studios-backup-'+dt+'.json',JSON.stringify(S.d,null,1),'application/json');
+const rows=S.d[d.k];if(!rows.length)return toast('Nothing to export yet');const cols=[...new Set(rows.flatMap(r=>Object.keys(r)))],q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+save(d.k+'-'+dt+'.csv','\ufeff'+[cols.map(q).join(',')].concat(rows.map(r=>cols.map(c=>q(r[c])).join(','))).join('\n'),'text/csv')},
+blk:d=>{const m=S.d.members.find(x=>x.id==d.id);if(!adm()||!m||m.role=='admin'||!confirm('Block '+m.name+'? They will lose access.'))return;const b=writeBatch(db),r=(c,id)=>doc(db,'shops',S.shop,c,id);b.set(r('blocked',m.id),{id:m.id,name:m.name,email:m.email||'',createdAt:Date.now()});b.delete(r('members',m.id));b.delete(doc(db,'users',m.id));b.commit().then(()=>toast('Blocked')).catch(e=>toast('Failed: '+e.code))},
+unb:d=>deleteDoc(doc(db,'shops',S.shop,'blocked',d.id)).then(()=>toast('Unblocked. They must join again with the shop code.')).catch(e=>toast('Failed: '+e.code)),
+ed:d=>{const k=d.c,r=(S.d[k]||[]).find(x=>x.id==d.id);if(!adm()||!r)return;const o=$('m');if(o)o.remove();const m=document.createElement('div');m.id='m';m.innerHTML=`<form class=card data-f=edit><h3>✏️ Edit</h3><br><input type=hidden name=k value=${k}><input type=hidden name=id value=${r.id}>${EF[k].map(f=>inp(f[0],f[1],f[2],f[3]+` value="${esc(r[f[0]]??'')}"`)).join('')}<button class=btn>Save changes</button><br><br><button type=button class=sm data-a=cl>Cancel</button></form>`;document.body.append(m)},
+edit:f=>{const k=f.k,r=(S.d[k]||[]).find(x=>x.id==f.id);if(!adm()||!r)return;const u={};EF[k].forEach(([n,,t])=>u[n]=t=='number'?+f[n]||0:(f[n]||'').trim());
+if(k=='sessions'&&u.total<paid(r.id))return toast('Total cannot be less than the '+N(paid(r.id))+' already paid');
+if(k=='payments'){const s=sess(r.sessionId),oth=paid(r.sessionId)-r.amount;if(s&&u.amount>s.total-oth)return toast('Too much. The most allowed is '+N(s.total-oth))}
+const b=writeBatch(db),ref=(c,id)=>doc(db,'shops',S.shop,c,id);
+b.update(ref(k,r.id),{...u,updatedAt:Date.now(),updatedBy:S.u.uid});
+if(k=='customers')S.d.sessions.filter(x=>x.customerId==r.id).forEach(x=>b.update(ref('sessions',x.id),{customerName:u.name,phone:u.phone}));
+b.commit().then(()=>toast('Saved')).catch(e=>toast('Edit failed: '+e.code));$('m').remove();setTimeout(refresh,400)},
+rc:d=>{const p=S.d.payments.find(x=>x.id==d.id),s=sess(p.sessionId)||{};
+const rows=[['Receipt no.',p.id.slice(0,6).toUpperCase()],['Date',p.date],['Customer',s.customerName||''],['Phone',s.phone||''],['Session total',N(s.total)],['Amount paid',N(p.amount)],['Balance after',N(after(p))],['Photos',s.photos||0],['Note',p.note||'-'],['Received by',p.createdByName||'']];
+const t='SUCCESS STUDIOS\nTel: '+TEL+'\n\n'+rows.map(r=>r[0]+': '+r[1]).join('\n')+'\n\nThank you for your patronage!';
+const m=document.createElement('div');m.id='m';m.dataset.t=t;
+m.innerHTML=`<div class=card><div style="background:#fff;color:#000;border-radius:14px;padding:16px;text-align:center"><img src="${LOGO}" style="width:150px;max-width:60%"><div style="font-size:13px;margin:4px 0 10px">Tel: ${TEL}</div>${rows.map(r=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #bbb;text-align:left;font-size:14px"><span style="color:#555">${r[0]}</span><b>${esc(r[1])}</b></div>`).join('')}<p style="margin-top:12px;font-size:14px">Thank you for your patronage!</p></div><br><button class=btn data-a=sh>Share</button><br><br><button class=btn style="background:#2f3550" data-a=pr>Print / Save PDF</button><br><br>${adm()?`<button class=btn style="background:#2f3550" data-a=ed data-c=payments data-id=${p.id}>Edit payment</button><br><br>`:''}<button class=sm data-a=cl>Close</button></div>`;document.body.append(m)},
+sh:()=>{const t=$('m').dataset.t;navigator.share?navigator.share({text:t}).catch(()=>{}):navigator.clipboard.writeText(t).then(()=>toast('Receipt copied'))},
+pr:()=>print(),cl:()=>$('m').remove()};
+
+document.addEventListener('click',e=>{const a=e.target.closest('[data-a]');if(a&&act[a.dataset.a])act[a.dataset.a](a.dataset)});
+document.addEventListener('submit',e=>{e.preventDefault();const f=e.target;act[f.dataset.f](Object.fromEntries(new FormData(f)),f)});
+addEventListener('hashchange',()=>{if(!S.u)render()});document.addEventListener('change',e=>{if(e.target.name!='pkg')return;const p=S.d.packages.find(x=>x.id==e.target.value),f=e.target.form;if(p&&f&&f.total)f.total.value=p.price});document.addEventListener('input',e=>{if(e.target.id!='q')return;S.q=e.target.value;const f={cust:lc,sess:ls}[S.v];if(f)$('lst').innerHTML=f()});addEventListener('online',refresh);addEventListener('offline',refresh);
+if(ok)onAuthStateChanged(auth,u=>{if(S.busy)return;if(u&&!S.u)start(u).catch(e=>toast(msg(e)));if(!u){S.u=null;render()}});
+render();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
