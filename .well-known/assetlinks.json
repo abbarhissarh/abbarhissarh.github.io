@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.successstudios.app",
+        "sha256_cert_fingerprints": ["78:F0:E0:28:A8:83:F7:7A:2F:7C:B6:CD:01:BF:A9:EE:1C:B6:DB:26:93:FB:1B:83:C7:D5:40:68:43:37:E9:F7"]
+      }
+    }]
